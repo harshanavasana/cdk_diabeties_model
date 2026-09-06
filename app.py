@@ -148,7 +148,7 @@ def clear_form():
     return [None] * (len(CKD_FIELDS) + len(DIABETES_FIELDS)) + ["", "", "Add patient information to begin the analysis."]
 
 
-with gr.Blocks(title="Patient Health Insights", css=CSS, theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="Patient Health Insights") as demo:
     gr.HTML(
         '<div class="hero">'
         '<h1>Patient Health Insights</h1>'
@@ -193,4 +193,4 @@ with gr.Blocks(title="Patient Health Insights", css=CSS, theme=gr.themes.Soft())
     )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(css=CSS, theme=gr.themes.Soft())
