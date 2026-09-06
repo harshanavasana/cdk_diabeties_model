@@ -13,6 +13,16 @@ import joblib
 import os
 import gradio as gr
 
+try:
+    import spaces
+except ImportError:
+    class _LocalSpaces:
+        @staticmethod
+        def GPU(function):
+            return function
+
+    spaces = _LocalSpaces()
+
 from model_registry import ModelRegistry
 from shap_engine import SHAPEngine
 from memory_store import MemoryStore
@@ -117,6 +127,7 @@ def _build_feature_inputs(fields, defaults=None, encoders=None):
 # ------------------------------------------------------------------
 # GRADIO CALLBACK
 # ------------------------------------------------------------------
+@spaces.GPU
 def predict(session_id, *feature_values):
     patient_data = {
         field: value
