@@ -1,0 +1,10 @@
+gradio>=4.0.0
+pandas
+numpy
+scikit-learn==1.6.1
+xgboost==2.1.4
+shap
+joblib
+transformers
+torch
+accelerate
