@@ -204,4 +204,9 @@ with gr.Blocks(title="Patient Health Insights") as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch(css=CSS, theme=gr.themes.Soft())
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=int(os.getenv("PORT", "7860")),
+        css=CSS,
+        theme=gr.themes.Soft(),
+    )
