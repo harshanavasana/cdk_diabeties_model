@@ -1,7 +1,8 @@
 services:
   - type: web
     name: ckd-diabetes-insights
-    env: python
+    runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python app.py
     envVars:
