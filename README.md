@@ -73,6 +73,18 @@ run `python app.py`; the app reads Render's `PORT` environment variable.
 SQLite is local to the running service. For a production deployment, attach a
 persistent Render disk or move account and prediction storage to a managed database.
 
+### Free Render deployment with Supabase PostgreSQL
+
+The app uses SQLite locally, but switches to PostgreSQL automatically when
+`DATABASE_URL` is set. To keep data on Render's free web service:
+
+1. Create a free Supabase project and open **Project Settings > Database**.
+2. Copy the connection string. Use the transaction pooler URI if Supabase provides one.
+3. In Render, open **Environment** and add `DATABASE_URL` with that URI as a secret.
+4. Redeploy. The app creates the `users` and `predictions` tables automatically.
+
+Keep the connection string private. Do not commit it to GitHub.
+
 ## Step 4 — Deploy to Hugging Face Spaces
 
 1. Go to https://huggingface.co/new-space

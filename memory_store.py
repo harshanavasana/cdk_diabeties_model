@@ -15,6 +15,7 @@ grounding — never a source of clinical truth.
 import sqlite3
 import json
 import uuid
+import os
 from datetime import datetime
 from contextlib import contextmanager
 
@@ -22,11 +23,16 @@ from contextlib import contextmanager
 class MemoryStore:
     def __init__(self, db_path: str = "memory.db"):
         self.db_path = db_path
+        self.database_url = os.getenv("DATABASE_URL")
         self._init_db()
 
     @contextmanager
     def _get_conn(self):
-        conn = sqlite3.connect(self.db_path)
+        if self.database_url:
+            import psycopg
+            conn = psycopg.connect(self.database_url)
+        else:
+            conn = sqlite3.connect(self.db_path)
         try:
             yield conn
             conn.commit()
@@ -35,16 +41,18 @@ class MemoryStore:
 
     def _init_db(self):
         with self._get_conn() as conn:
-            conn.execute("""
+            timestamp_type = "TIMESTAMPTZ" if self.database_url else "TEXT"
+            probability_type = "DOUBLE PRECISION" if self.database_url else "REAL"
+            conn.execute(f"""
                 CREATE TABLE IF NOT EXISTS predictions (
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
+                    timestamp {timestamp_type} NOT NULL,
                     ckd_prediction TEXT,
-                    ckd_probability REAL,
+                    ckd_probability {probability_type},
                     ckd_shap_json TEXT,
                     diabetes_prediction TEXT,
-                    diabetes_probability REAL,
+                    diabetes_probability {probability_type},
                     diabetes_shap_json TEXT,
                     errors_json TEXT
                 )
@@ -62,13 +70,15 @@ class MemoryStore:
         diabetes = result.get("diabetes") or {}
 
         with self._get_conn() as conn:
-            conn.execute("""
+            placeholder = "%s" if self.database_url else "?"
+            placeholders = ", ".join([placeholder] * 10)
+            conn.execute(f"""
                 INSERT INTO predictions (
                     id, session_id, timestamp,
                     ckd_prediction, ckd_probability, ckd_shap_json,
                     diabetes_prediction, diabetes_probability, diabetes_shap_json,
                     errors_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES ({placeholders})
             """, (
                 record_id,
                 session_id,
@@ -86,17 +96,26 @@ class MemoryStore:
     def get_recent(self, session_id: str = "default", limit: int = 5) -> list:
         """Retrieve the most recent N records for a session, most recent first."""
         with self._get_conn() as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute("""
+            if not self.database_url:
+                conn.row_factory = sqlite3.Row
+            placeholder = "%s" if self.database_url else "?"
+            rows = conn.execute(f"""
                 SELECT * FROM predictions
-                WHERE session_id = ?
+                WHERE session_id = {placeholder}
                 ORDER BY timestamp DESC
-                LIMIT ?
+                LIMIT {placeholder}
             """, (session_id, limit)).fetchall()
 
         records = []
         for row in rows:
-            record = dict(row)
+            if self.database_url:
+                record = dict(zip(
+                    ["id", "session_id", "timestamp", "ckd_prediction", "ckd_probability",
+                     "ckd_shap_json", "diabetes_prediction", "diabetes_probability",
+                     "diabetes_shap_json", "errors_json"], row
+                ))
+            else:
+                record = dict(row)
             if record.get("ckd_shap_json"):
                 record["ckd_shap"] = json.loads(record["ckd_shap_json"])
             if record.get("diabetes_shap_json"):
@@ -110,4 +129,5 @@ class MemoryStore:
 
     def clear_session(self, session_id: str = "default"):
         with self._get_conn() as conn:
-            conn.execute("DELETE FROM predictions WHERE session_id = ?", (session_id,))
+            placeholder = "%s" if self.database_url else "?"
+            conn.execute(f"DELETE FROM predictions WHERE session_id = {placeholder}", (session_id,))

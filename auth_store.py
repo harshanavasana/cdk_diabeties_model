@@ -4,17 +4,23 @@ import hashlib
 import hmac
 import secrets
 import sqlite3
+import os
 from contextlib import contextmanager
 
 
 class AuthStore:
     def __init__(self, db_path: str = "memory.db"):
         self.db_path = db_path
+        self.database_url = os.getenv("DATABASE_URL")
         self._init_db()
 
     @contextmanager
     def _get_conn(self):
-        conn = sqlite3.connect(self.db_path)
+        if self.database_url:
+            import psycopg
+            conn = psycopg.connect(self.database_url)
+        else:
+            conn = sqlite3.connect(self.db_path)
         try:
             yield conn
             conn.commit()
@@ -23,15 +29,26 @@ class AuthStore:
 
     def _init_db(self):
         with self._get_conn() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    email TEXT PRIMARY KEY,
-                    password_hash TEXT NOT NULL,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            if self.database_url:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS users (
+                        email TEXT PRIMARY KEY,
+                        password_hash TEXT NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
                 )
-                """
-            )
+            else:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS users (
+                        email TEXT PRIMARY KEY,
+                        password_hash TEXT NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
 
     @staticmethod
     def _normalize_email(email: str) -> str:
@@ -66,19 +83,25 @@ class AuthStore:
 
         try:
             with self._get_conn() as conn:
+                placeholder = "%s" if self.database_url else "?"
                 conn.execute(
-                    "INSERT INTO users (email, password_hash) VALUES (?, ?)",
+                    f"INSERT INTO users (email, password_hash) VALUES ({placeholder}, {placeholder})",
                     (email, self._hash_password(password)),
                 )
         except sqlite3.IntegrityError:
             return False, "An account with that email already exists."
+        except Exception as error:
+            if self.database_url and getattr(error, "sqlstate", None) == "23505":
+                return False, "An account with that email already exists."
+            raise
         return True, "Account created. You can log in now."
 
     def authenticate(self, email: str, password: str) -> tuple[bool, str]:
         email = self._normalize_email(email)
         with self._get_conn() as conn:
+            placeholder = "%s" if self.database_url else "?"
             row = conn.execute(
-                "SELECT password_hash FROM users WHERE email = ?", (email,)
+                f"SELECT password_hash FROM users WHERE email = {placeholder}", (email,)
             ).fetchone()
         if row and self._verify_password(password or "", row[0]):
             return True, email

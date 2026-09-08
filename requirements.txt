@@ -9,3 +9,4 @@ transformers
 torch
 accelerate
 spaces
+psycopg[binary]>=3.2
