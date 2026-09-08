@@ -87,8 +87,10 @@ body { background: #edf5f3; }
 .section-title { color: var(--ink); font-size: 18px; font-weight: 700; margin: 0 0 4px; }
 .section-copy { color: var(--muted); margin: 0 0 14px; }
 .status { background: var(--aqua); border: 1px solid #b9dfd8; border-radius: 12px; padding: 12px 16px; color: var(--teal-dark); }
+.status p, .status span { color: var(--teal-dark) !important; }
 .primary-btn { min-height: 52px; font-size: 17px !important; }
 .auth-box { max-width: 480px; margin: 42px auto; }
+.auth-actions { gap: 10px; }
 .step-note { color: var(--muted); font-size: 14px; }
 .result-box textarea { font-size: 16px !important; line-height: 1.55 !important; }
 footer { display: none !important; }
@@ -200,7 +202,7 @@ with gr.Blocks(title="Patient Health Insights") as demo:
         with gr.Group(elem_classes="section"):
             email = gr.Textbox(label="Email", placeholder="you@example.com")
             password = gr.Textbox(label="Password", type="password")
-            with gr.Row():
+            with gr.Row(elem_classes="auth-actions"):
                 login_btn = gr.Button("Log in", variant="primary", elem_classes="primary-btn")
                 signup_btn = gr.Button("Create account")
             auth_status = gr.Markdown("Use an existing account or create one.", elem_classes="status")
