@@ -69,6 +69,67 @@ orchestrator = Orchestrator(registry, shap_engine=shap_engine, memory_store=memo
 CKD_FIELDS = list(registry.ckd_feature_order)
 DIABETES_FIELDS = list(registry.diabetes_feature_order)
 
+FIELD_LABELS = {
+    "age": "Age (years)",
+    "al": "Albumin level",
+    "ane": "Anemia",
+    "appet": "Appetite",
+    "ba": "Bacteria in urine",
+    "bgr": "Blood glucose",
+    "bp": "Blood pressure",
+    "bu": "Blood urea",
+    "cad": "Heart disease",
+    "dm": "Diabetes",
+    "hemo": "Hemoglobin",
+    "htn": "High blood pressure",
+    "pc": "Urine cells",
+    "pcc": "Urine cell casts",
+    "pcv": "Packed cell volume",
+    "pe": "Pedal edema",
+    "pot": "Potassium",
+    "rbc": "Red blood cells",
+    "sc": "Serum creatinine",
+    "sg": "Specific gravity",
+    "sod": "Sodium",
+    "su": "Sugar level",
+    "HighBP": "High blood pressure",
+    "HighChol": "High cholesterol",
+    "CholCheck": "Cholesterol checked",
+    "BMI": "BMI",
+    "Smoker": "Smoker",
+    "Stroke": "History of stroke",
+    "HeartDiseaseorAttack": "Heart disease or heart attack",
+    "PhysActivity": "Physical activity",
+    "Fruits": "Eats fruit regularly",
+    "Veggies": "Eats vegetables regularly",
+    "HvyAlcoholConsump": "Heavy alcohol consumption",
+    "AnyHealthcare": "Has healthcare coverage",
+    "NoDocbcCost": "Skipped doctor due to cost",
+    "GenHlth": "General health",
+    "MentHlth": "Poor mental-health days",
+    "PhysHlth": "Poor physical-health days",
+    "DiffWalk": "Difficulty walking",
+    "Sex": "Sex",
+    "Age": "Age group",
+    "Education": "Education level",
+    "Income": "Income level",
+}
+
+CKD_VALUE_LABELS = {
+    "al": {str(value): f"Level {value}" for value in range(6)},
+    "su": {str(value): f"Level {value}" for value in range(6)},
+    "ane": {"no": "No", "yes": "Yes"},
+    "appet": {"good": "Good", "poor": "Poor"},
+    "ba": {"notpresent": "Not present", "present": "Present"},
+    "cad": {"no": "No", "yes": "Yes"},
+    "dm": {"no": "No", "yes": "Yes"},
+    "htn": {"no": "No", "yes": "Yes"},
+    "pc": {"abnormal": "Abnormal", "normal": "Normal"},
+    "pcc": {"notpresent": "Not present", "present": "Present"},
+    "pe": {"no": "No", "yes": "Yes"},
+    "rbc": {"abnormal": "Abnormal", "normal": "Normal"},
+}
+
 CSS = """
 :root {
     --ink: #173042;
@@ -98,7 +159,7 @@ footer { display: none !important; }
 """
 
 def _display_name(field):
-    return field.replace("_", " ").replace("GenHlth", "General health").title()
+    return FIELD_LABELS.get(field, field.replace("_", " ").title())
 
 
 def _build_feature_inputs(fields, defaults=None, encoders=None):
@@ -112,13 +173,16 @@ def _build_feature_inputs(fields, defaults=None, encoders=None):
             for field in fields[start:start + 2]:
                 label = _display_name(field)
                 if field in encoders:
-                    choices = [str(value) for value in encoders[field].classes_]
+                    choices = [
+                        (CKD_VALUE_LABELS.get(field, {}).get(str(value), str(value)), str(value))
+                        for value in encoders[field].classes_
+                    ]
                     value = defaults.get(field)
                     if value is not None:
                         value = str(value)
                     component = gr.Dropdown(
                         choices=choices,
-                        value=value if value in choices else None,
+                        value=value,
                         label=label,
                         allow_custom_value=False,
                     )
