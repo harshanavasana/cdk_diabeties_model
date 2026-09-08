@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: ckd-diabetes-insights
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: CKD_USE_LLM_MODEL
+        value: "false"

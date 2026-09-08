@@ -26,6 +26,7 @@ except ImportError:
 from model_registry import ModelRegistry
 from shap_engine import SHAPEngine
 from memory_store import MemoryStore
+from auth_store import AuthStore
 from llm_engine import LLMEngine
 from orchestrator import Orchestrator
 
@@ -56,6 +57,7 @@ shap_engine = SHAPEngine(
 
 print("Initializing memory store (SQLite)...")
 memory = MemoryStore(db_path="memory.db")
+auth = AuthStore(db_path="memory.db")
 
 print("Loading LLM engine (this may take a minute on first boot)...")
 use_llm_model = os.getenv("CKD_USE_LLM_MODEL", "false").lower() in {"1", "true", "yes"}
@@ -86,6 +88,9 @@ body { background: #edf5f3; }
 .section-copy { color: var(--muted); margin: 0 0 14px; }
 .status { background: var(--aqua); border: 1px solid #b9dfd8; border-radius: 12px; padding: 12px 16px; color: var(--teal-dark); }
 .primary-btn { min-height: 52px; font-size: 17px !important; }
+.auth-box { max-width: 480px; margin: 42px auto; }
+.step-note { color: var(--muted); font-size: 14px; }
+.result-box textarea { font-size: 16px !important; line-height: 1.55 !important; }
 footer { display: none !important; }
 """
 
@@ -124,84 +129,124 @@ def _build_feature_inputs(fields, defaults=None, encoders=None):
     return components
 
 
-# ------------------------------------------------------------------
-# GRADIO CALLBACK
-# ------------------------------------------------------------------
-@spaces.GPU
-def predict(session_id, *feature_values):
-    patient_data = {
-        field: value
-        for field, value in zip(CKD_FIELDS + DIABETES_FIELDS, feature_values)
-        if value is not None and value != ""
-    }
+def _updates(visible):
+    return gr.update(visible=visible)
 
+
+def create_account(email, password):
+    _, message = auth.create_user(email, password)
+    return message
+
+
+def login(email, password):
+    valid, message = auth.authenticate(email, password)
+    if not valid:
+        return message, _updates(True), _updates(False), "", ""
+    return f"Signed in as {message}", _updates(False), _updates(True), message, f"Signed in as `{message}`"
+
+
+def logout():
+    return "You are signed out.", _updates(True), _updates(False), "", ""
+
+
+def _patient_data(fields, values):
+    return {field: value for field, value in zip(fields, values) if value is not None and value != ""}
+
+
+@spaces.GPU
+def run_ckd(session_id, *values):
     result = orchestrator.run(
-        patient_data,
+        _patient_data(CKD_FIELDS, values),
+        run_ckd=True,
+        run_diabetes=False,
         session_id=session_id or "default",
     )
-
-    explanation = result.get("explanation", "(no explanation generated)")
-    completed = []
-    if result.get("ckd"):
-        completed.append("kidney health")
-    if result.get("diabetes"):
-        completed.append("diabetes and general health")
-    if completed:
-        status = "Analysis completed for: " + " and ".join(completed) + "."
-    elif result.get("errors"):
-        status = "Please complete all fields for at least one health profile before analyzing."
-    else:
-        status = "Add patient information to begin the analysis."
-    return json.dumps(result, indent=2), explanation, status
+    return json.dumps(result, indent=2), result.get("explanation", ""), result
 
 
-def clear_form():
-    return [None] * (len(CKD_FIELDS) + len(DIABETES_FIELDS)) + ["", "", "Add patient information to begin the analysis."]
+@spaces.GPU
+def run_diabetes(session_id, ckd_result, *values):
+    patient_data = _patient_data(DIABETES_FIELDS, values)
+    result = orchestrator.run(
+        patient_data,
+        run_ckd=False,
+        run_diabetes=True,
+        session_id=session_id or "default",
+    )
+    if isinstance(ckd_result, dict) and ckd_result.get("ckd"):
+        result["ckd"] = ckd_result["ckd"]
+        result["explanation"] = llm.generate_explanation(result)
+    return json.dumps(result, indent=2), result.get("explanation", ""), result
+
+
+def skip_ckd():
+    return "CKD skipped. Complete the diabetes profile below, or open Results when ready.", _updates(True)
+
+
+def skip_diabetes():
+    return "Diabetes skipped. Open Results to view the completed analysis.", _updates(True)
+
+
+def clear_results():
+    return "", "No analysis has been run yet."
 
 
 with gr.Blocks(title="Patient Health Insights") as demo:
-    gr.HTML(
-        '<div class="hero">'
-        '<h1>Patient Health Insights</h1>'
-        '<p>Enter the health information you have. Our analysis router identifies which complete health profile can be evaluated and explains the result in plain language.</p>'
-        '</div>'
+    session_id = gr.State("")
+    ckd_result_state = gr.State({})
+
+    with gr.Column(visible=True, elem_classes="auth-box") as auth_view:
+        gr.HTML('<div class="hero"><h1>Patient Health Insights</h1><p>Sign in to run private health model analyses.</p></div>')
+        with gr.Group(elem_classes="section"):
+            email = gr.Textbox(label="Email", placeholder="you@example.com")
+            password = gr.Textbox(label="Password", type="password")
+            with gr.Row():
+                login_btn = gr.Button("Log in", variant="primary", elem_classes="primary-btn")
+                signup_btn = gr.Button("Create account")
+            auth_status = gr.Markdown("Use an existing account or create one.", elem_classes="status")
+
+    with gr.Column(visible=False) as app_view:
+        gr.HTML('<div class="hero"><h1>Patient Health Insights</h1><p>Complete either model, skip what you do not need, then review the explanation on the Results page.</p></div>')
+        with gr.Row():
+            signed_in_as = gr.Markdown()
+            logout_btn = gr.Button("Log out")
+        session_id.value = ""
+        with gr.Tabs():
+            with gr.Tab("1. Kidney model"):
+                gr.Markdown("Enter every kidney-health field, then continue to the next model. You may skip this model.", elem_classes="step-note")
+                ckd_inputs = _build_feature_inputs(CKD_FIELDS, encoders=registry.ckd_encoders)
+                with gr.Row():
+                    ckd_btn = gr.Button("Run kidney model", variant="primary", elem_classes="primary-btn")
+                    skip_ckd_btn = gr.Button("Skip kidney model")
+                ckd_status = gr.Markdown("", elem_classes="status")
+            with gr.Tab("2. Diabetes model"):
+                gr.Markdown("Enter every diabetes-health field, then open Results. You may skip this model.", elem_classes="step-note")
+                diabetes_inputs = _build_feature_inputs(DIABETES_FIELDS)
+                with gr.Row():
+                    diabetes_btn = gr.Button("Run diabetes model", variant="primary", elem_classes="primary-btn")
+                    skip_diabetes_btn = gr.Button("Skip diabetes model")
+                diabetes_status = gr.Markdown("", elem_classes="status")
+            with gr.Tab("3. Results and explanation"):
+                gr.Markdown("### Explainable AI results", elem_classes="section-title")
+                gr.Markdown("This page separates the model predictions, evidence, and plain-language explanation.", elem_classes="section-copy")
+                explanation_output = gr.Textbox(label="Plain-language explanation", lines=8, elem_classes="result-box")
+                with gr.Accordion("Technical model output", open=False):
+                    result_output = gr.Code(label="Structured result", language="json", lines=16)
+                clear_btn = gr.Button("Clear results")
+
+    login_btn.click(login, [email, password], [auth_status, auth_view, app_view, session_id, signed_in_as])
+    signup_btn.click(create_account, [email, password], auth_status)
+    logout_btn.click(logout, [], [auth_status, auth_view, app_view, session_id, signed_in_as])
+    ckd_btn.click(run_ckd, [session_id, *ckd_inputs], [result_output, explanation_output, ckd_result_state]).then(
+        lambda: "Kidney model complete. Review it on Results or continue to the diabetes model.",
+        [], ckd_status
     )
-
-    gr.Markdown(
-        "**One patient profile, one analysis button.** You do not need to choose a model or enter JSON. "
-        "Complete either health section, or complete both for a combined view. This tool is for research and education, not diagnosis."
+    diabetes_btn.click(run_diabetes, [session_id, ckd_result_state, *diabetes_inputs], [result_output, explanation_output, ckd_result_state]).then(
+        lambda: "Diabetes model complete. Open Results to review the explanation.", [], diabetes_status
     )
-    session_id = gr.Textbox(label="Session name (optional)", value="demo-session", visible=False)
-
-    with gr.Group(elem_classes="section"):
-        gr.Markdown("### Kidney health", elem_classes="section-title")
-        gr.Markdown("Lab results and symptoms commonly used for kidney health analysis.", elem_classes="section-copy")
-        ckd_inputs = _build_feature_inputs(CKD_FIELDS, encoders=registry.ckd_encoders)
-
-    with gr.Group(elem_classes="section"):
-        gr.Markdown("### General health and lifestyle", elem_classes="section-title")
-        gr.Markdown("Everyday health information used for diabetes risk analysis.", elem_classes="section-copy")
-        diabetes_inputs = _build_feature_inputs(DIABETES_FIELDS)
-
-    with gr.Row():
-        submit_btn = gr.Button("Analyze patient profile", variant="primary", elem_classes="primary-btn")
-        clear_btn = gr.Button("Clear form")
-
-    status_output = gr.Markdown("Add patient information to begin the analysis.", elem_classes="status")
-    explanation_output = gr.Textbox(label="Your results", lines=10)
-    with gr.Accordion("Technical details", open=False):
-        result_output = gr.Code(label="Structured result", language="json", lines=10)
-
-    submit_btn.click(
-        fn=predict,
-        inputs=[session_id, *ckd_inputs, *diabetes_inputs],
-        outputs=[result_output, explanation_output, status_output]
-    )
-    clear_btn.click(
-        fn=clear_form,
-        inputs=[],
-        outputs=[*ckd_inputs, *diabetes_inputs, result_output, explanation_output, status_output]
-    )
+    skip_ckd_btn.click(skip_ckd, [], [ckd_status, app_view])
+    skip_diabetes_btn.click(skip_diabetes, [], [diabetes_status, app_view])
+    clear_btn.click(clear_results, [], [result_output, explanation_output])
 
 if __name__ == "__main__":
     demo.launch(

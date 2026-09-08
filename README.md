@@ -7,9 +7,9 @@ app_file: app.py
 # Patient Health Insights
 
 Integrated ML + SHAP + orchestrator + LLM explanation system, per the
-project proposal. Two independent models (CKD Random Forest, Diabetes
-XGBoost) coordinated by an orchestrator, explained via SHAP, phrased
-in plain language by a small free LLM, with SQLite-based memory.
+project proposal. Users create an account or log in with an email and
+password stored in SQLite. The app guides them through separate CKD and
+diabetes model pages before showing explainable-AI results on a Results page.
 
 ## Folder structure
 
@@ -20,6 +20,7 @@ ckd_diabetes_app/
 ├── model_registry.py      # Loads all saved model artifacts once
 ├── shap_engine.py          # SHAP explanations (patient-specific + global)
 ├── memory_store.py         # SQLite-based lightweight memory
+├── auth_store.py           # SQLite account storage with hashed passwords
 ├── llm_engine.py           # LLM interpretation layer (+ template fallback)
 ├── requirements.txt
 ├── README.md
@@ -63,7 +64,16 @@ The app starts in deterministic template mode by default, so it works
 without downloading a large language model. To enable the optional LLM
 locally, set `CKD_USE_LLM_MODEL=true` before starting the app.
 
-## Step 3 — Deploy to Hugging Face Spaces
+## Step 3 — Deploy to Render
+
+This repository includes `render.yaml`. In Render, choose **New > Blueprint**
+and connect the GitHub repository. Render will install the dependencies and
+run `python app.py`; the app reads Render's `PORT` environment variable.
+
+SQLite is local to the running service. For a production deployment, attach a
+persistent Render disk or move account and prediction storage to a managed database.
+
+## Step 4 — Deploy to Hugging Face Spaces
 
 1. Go to https://huggingface.co/new-space
 2. Create a new Space, choose **Gradio**, and choose **CPU basic** hardware.
