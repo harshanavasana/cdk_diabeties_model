@@ -56,8 +56,9 @@ shap_engine = SHAPEngine(
 )
 
 print("Initializing memory store (SQLite)...")
-memory = MemoryStore(db_path="memory.db")
-auth = AuthStore(db_path="memory.db")
+db_path = os.getenv("DB_PATH", "memory.db")
+memory = MemoryStore(db_path=db_path)
+auth = AuthStore(db_path=db_path)
 
 print("Loading LLM engine (this may take a minute on first boot)...")
 use_llm_model = os.getenv("CKD_USE_LLM_MODEL", "false").lower() in {"1", "true", "yes"}
