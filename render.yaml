@@ -8,3 +8,5 @@ services:
     envVars:
       - key: CKD_USE_LLM_MODEL
         value: "false"
+      - key: DATABASE_URL
+        sync: false
